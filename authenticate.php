@@ -19,104 +19,41 @@
 
     $client = new OAuth2\Client($CLIENT_ID, $CLIENT_SECRET);
     
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     if (!get_input('code'))
     {
-        $params = array('scope' => 'r_fullprofile r_emailaddress', 'response_type' => 'code', 'state' => $state);
-        $params = elgg_trigger_plugin_hook('wordpress_oauth2', 'permissions', null, $params); // Allow customisation permissions
+        $params = array('response_type' => 'code', 'client_id' => $CLIENT_ID);
+        
         $auth_url = $client->getAuthenticationUrl($AUTHORIZATION_ENDPOINT, $REDIRECT_URI, $params);
         header('Location: ' . $auth_url);
+        
         die('Redirect');
     }
     else
     {
-        $params = array('code' => $_GET['code'], 'redirect_uri' => $REDIRECT_URI, 'state' => $state);
-        $params = elgg_trigger_plugin_hook('wordpress_oauth2', 'get_access_token', null, $params); // Allow customisation of access token parameters
-        $response = $client->getAccessToken($TOKEN_ENDPOINT/* . "?state=$state" */, 'authorization_code', $params);
-
+        $params = array('code' => $_GET['code'], 'redirect_uri' => $REDIRECT_URI, 'client_secret' => $CLIENT_SECRET);
+        $response = $client->getAccessToken($TOKEN_ENDPOINT, 'authorization_code', $params);
+    
         $access_token = $response['result']['access_token'];
-//print_r($access_token); die();
-//print_r($response);
-//        parse_str($response['result'], $info);
+    
         $client->setAccessToken($access_token);
-//print_r($info['access_token']);
-        $response = $client->fetch('https://api.wordpress.com/v1/people/~:(id,first-name,last-name,picture-url)', array('oauth2_access_token' => $access_token, 'format' => 'json'));
-     //   var_dump($response, $response['result']);
+    
+mail('marcus@dushka.co.uk', 'Wordpress login', print_r($response, true));
+
         $profile = $response['result'];
 
-        if ((!$profile) || (!$profile['id'])) {register_error('Invalid response from server, try again in a bit.'); forward();}
+        if ((!$profile) || (!$profile['blog_id'])) {register_error('Invalid response from server, try again in a bit.'); forward();}
         
-        $response = $client->fetch('https://api.wordpress.com/v1/people/~/email-address', array('oauth2_access_token' => $access_token, 'format' => 'json'));
-        $email = $response['result'];
-
         $ia = elgg_set_ignore_access(); // Ensure we get disabled users as well.
         $users = elgg_get_entities_from_metadata(array(
             'types' => 'user',
-            'metadata_name_value_pairs' => array('name' => 'wordpress_id', 'value' => $profile['id']),
+            'metadata_name_value_pairs' => array('name' => 'wordpress_id', 'value' => $profile['blog_id']),
             'limit' => 1
         ));
         elgg_set_ignore_access($ia);
         
         if ($users) {
 	    $user = $users[0];
-	    
-            
-            
-            
-            
-            
-            
-            $user->name = $profile['firstName'] . ' ' . $profile['lastName'];
-	    $user->wordpress_picture_url  = $profile['pictureUrl'];
-
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
+	                
             try {
                 if (elgg_trigger_plugin_hook('wordpress_oauth2', 'user', array(
                     'oauth_client' =>$client,
@@ -134,25 +71,7 @@
             // New user
             
             $password = generate_random_cleartext_password();
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            $username = strtolower(preg_replace("/[^a-zA-Z0-9\s]/", "", $profile['firstName'] . $profile['lastName']));
-            
-            
-            
-            
-            
-            
-            
-            
-            
+            $username = "wordpress_user_{$profile['blog_id']}"; //strtolower(preg_replace("/[^a-zA-Z0-9\s]/", "", $profile['firstName'] . $profile['lastName']));
             
             if (get_user_by_username($username)) {
                 $n = 1;
@@ -163,8 +82,8 @@
             $user = new ElggUser();
             $user->subtype = 'wordpress';
             $user->username = $username;
-            $user->name = $profile['firstName'] . ' ' . $profile['lastName'];
-            $user->email = $email;
+            $user->name = $profile['blog_url']; // TODO, nicer name?
+            //$user->email = $email;
             $user->access_id = ACCESS_PUBLIC;
             $user->salt = generate_random_cleartext_password();
             $user->password = generate_user_password($user, $password);
@@ -174,36 +93,10 @@
             $user->save();
             
             
+            $user->wordpress_id = $profile['blog_id'];        
+            $user->wordpress_url  = $profile['blog_url'];
             
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            $user->wordpress_id = $profile['id'];        
-            $user->wordpress_picture_url  = $profile['pictureUrl'];
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            // Linkedin validates emails, so we're going to assume they did a good job.
+            // Wordpress validates emails, so we're going to assume they did a good job.
             elgg_set_user_validation_status($user->guid, true, 'wordpress_oauth2');   
             
             // Trigger register hook
